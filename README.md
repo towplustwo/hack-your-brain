@@ -37,6 +37,6 @@ Each number (1–10) represents a folder in brain_images/. Example:
 2: wholesome_memes
 4: giga_chad
 
-Use ```./hack_brain,sh 2``` for that particular category to show up as media \n
+Use ```./hack_brain,sh 2``` for that particular category to show up as media
 Use ```./hack_brain,sh image_name``` for a particular image to show up
 use ```./hack_brain,sh --reset``` to reset the seen media log file
