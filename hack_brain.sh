@@ -1,16 +1,69 @@
 #!/bin/bash
 
-# 🧠 Terminal Brain Hack Prank Script (WSL Edition v0.5 - Media Logging Mode!)
+# 🧠 Terminal Brain Hack Prank Script (Final Version with Fixed Logging)
 SEEN_LIST=".shown_media.log"
+CURRENT_MEDIA=""
+FEH_PID=""
+MPV_PID=""
+CMATRIX_PID=""
 
-# Reset seen list if requested
-if [[ "$1" == "--reset" ]]; then
-  rm -f "$SEEN_LIST"
-  echo -e "\e[36m🔁 Seen media list reset!\e[0m"
-  exit 0
-fi
+# Handle program interruptions (e.g., Ctrl+C)
+trap "cleanup_and_exit" INT
 
-echo -e "\e[35m🧪 Arg 1 received: '$1'\e[0m"
+# Cleanup function to terminate background processes and log media
+cleanup_and_exit() {
+  echo -e "\n\e[31m⚠️ Interrupt detected! Cleaning up...\e[0m"
+  
+  # Kill background processes if they exist
+  [[ -n "$FEH_PID" ]] && kill "$FEH_PID" 2>/dev/null
+  [[ -n "$MPV_PID" ]] && kill "$MPV_PID" 2>/dev/null
+  [[ -n "$CMATRIX_PID" ]] && kill "$CMATRIX_PID" 2>/dev/null
+  
+  # Log the current media if it is set
+  if [[ -n "$CURRENT_MEDIA" ]]; then
+    echo "$CURRENT_MEDIA" >> "$SEEN_LIST"
+    echo -e "\e[36m✔️ Logged current media: $CURRENT_MEDIA\e[0m"
+  fi
+  
+  # Deduplicate the seen list
+  sort -u "$SEEN_LIST" -o "$SEEN_LIST"
+  
+  exit
+}
+
+# Simulates typing out text
+type_out() {
+  local text="$1"
+  for ((i = 0; i < ${#text}; i++)); do
+    echo -n "${text:$i:1}"
+    sleep 0.02
+  done
+  echo
+}
+
+# Play sound
+play_sound() {
+  local sound_file="$1"
+  if [[ -f "$sound_file" ]]; then
+    local sound_path
+    sound_path=$(wslpath -w "$sound_file")
+    powershell.exe -c "(New-Object Media.SoundPlayer '$sound_path').PlaySync();"
+  else
+    echo -e "\e[31m❌ Sound file '$sound_file' not found!\e[0m"
+  fi
+}
+
+# NEUDALINK Logo
+neuralink_logo() {
+  echo -e "\e[36m
+       ███╗   ██╗███████╗██╗   ██╗██████╗  █████╗ ██╗     ██╗███╗   ██╗██╗  ██╗
+       ████╗  ██║██╔════╝██║   ██║██╔══██╗██╔══██╗██║     ██║████╗  ██║██║ ██╔╝
+       ██╔██╗ ██║█████╗  ██║   ██║██║  ██║███████║██║     ██║██╔██╗ ██║█████╔╝
+       ██║╚██╗██║██╔══╝  ██║   ██║██║  ██║██╔══██║██║     ██║██║╚██╗██║██╔═██╗
+       ██║ ╚████║███████╗╚██████╔╝██████╔╝██║  ██║███████╗██║██║ ╚████║██║  ██╗
+       ╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
+  \e[0m"
+}
 
 declare -A CATEGORY_MAP=(
   [1]="1_animal_faces"
@@ -25,31 +78,50 @@ declare -A CATEGORY_MAP=(
   [10]="10_surprise_me"
 )
 
-type_out() {
-  local text="$1"
-  for ((i = 0; i < ${#text}; i++)); do
-    echo -n "${text:$i:1}"
-    sleep 0.02
+# Reset seen list if requested
+if [[ "$1" == "--reset" ]]; then
+  > "$SEEN_LIST"
+  echo -e "\e[36m🔁 Seen media list reset!\e[0m"
+  exit 0
+fi
+
+# Count and display media stats if requested
+if [[ "$1" == "--logged" ]]; then
+  BASEDIR="brain_images"
+  ALL_MEDIA=()
+  LOGGED_MEDIA=()
+
+  # Collect all media files across all categories
+  for category in "${CATEGORY_MAP[@]}"; do
+    CATEGORY_PATH="$BASEDIR/$category"
+    if [[ -d "$CATEGORY_PATH" ]]; then
+      mapfile -t CATEGORY_FILES < <(find "$CATEGORY_PATH" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.mp4" -o -iname "*.webm" \))
+      ALL_MEDIA+=("${CATEGORY_FILES[@]}")
+    fi
   done
-  echo
-}
 
-play_sound() {
-  local sound_file="$1"
-  if [[ -f "$sound_file" ]]; then
-    local sound_path
-    sound_path=$(wslpath -w "$sound_file")
-    powershell.exe -c "(New-Object Media.SoundPlayer '$sound_path').PlaySync();"
-  else
-    echo -e "\e[31m❌ Sound file '$sound_file' not found!\e[0m"
-  fi
-}
+  # Ensure the seen list file exists
+  touch "$SEEN_LIST"
+  mapfile -t LOGGED_MEDIA < <(sort -u "$SEEN_LIST") # Remove duplicates
 
+  # Calculate totals
+  TOTAL_MEDIA=${#ALL_MEDIA[@]}
+  TOTAL_LOGGED=${#LOGGED_MEDIA[@]}
+  TOTAL_UNLOGGED=$((TOTAL_MEDIA - TOTAL_LOGGED))
+
+  # Output the stats
+  echo -e "\e[36m📊 Media Statistics:\e[0m"
+  echo -e "\e[32m  Total Media: $TOTAL_MEDIA\e[0m"
+  echo -e "\e[33m  Logged Media: $TOTAL_LOGGED\e[0m"
+  echo -e "\e[31m  Unlogged Media: $TOTAL_UNLOGGED\e[0m"
+  exit 0
+fi
+
+# Show image or video
 show_image() {
   local input="$1"
   local media=""
   local basedir="brain_images"
-  local log_media="true"
 
   if [[ "$input" =~ ^[0-9]+$ ]]; then
     local category="${CATEGORY_MAP[$input]}"
@@ -64,9 +136,11 @@ show_image() {
     mapfile -t all_media < <(find "$folder" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.mp4" -o -iname "*.webm" \))
 
     touch "$SEEN_LIST"
+    mapfile -t logged_media < <(sort -u "$SEEN_LIST") # Remove duplicates
+
     local unseen_media=()
     for media_path in "${all_media[@]}"; do
-      if ! grep -Fxq "$media_path" "$SEEN_LIST"; then
+      if [[ ! " ${logged_media[*]} " =~ " ${media_path} " ]]; then
         unseen_media+=("$media_path")
       fi
     done
@@ -78,9 +152,7 @@ show_image() {
     fi
 
     media=$(printf "%s\n" "${unseen_media[@]}" | shuf -n1)
-
   else
-    log_media="false"
     echo -e "\e[34m🔍 Searching for file: $input.*\e[0m"
     for ext in jpg jpeg png gif mp4 webm; do
       local file="$basedir/${input}.${ext}"
@@ -96,15 +168,12 @@ show_image() {
       local all_files
       mapfile -t all_files < <(find "$basedir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.mp4" -o -iname "*.webm" \))
       media=$(printf "%s\n" "${all_files[@]}" | shuf -n1)
-      log_media="true"
-      echo -e "\e[36m🎲 Random media: $media\e[0m"
     fi
   fi
 
-  # Log media if appropriate
-  if [[ "$log_media" == "true" ]]; then
-    echo "$media" >> "$SEEN_LIST"
-  fi
+  # Log media immediately after selection
+  CURRENT_MEDIA="$media"
+  echo "$CURRENT_MEDIA" >> "$SEEN_LIST"
 
   local ext="${media##*.}"
   local ext_lower
@@ -113,12 +182,22 @@ show_image() {
   if [[ "$ext_lower" =~ ^(jpg|jpeg|png)$ ]]; then
     if command -v feh &>/dev/null; then
       feh -F --auto-zoom "$media" &
+      FEH_PID=$!
+      sleep 20
+      kill "$FEH_PID" 2>/dev/null
     else
       echo -e "\e[31m❌ 'feh' not found!\e[0m"
     fi
   elif [[ "$ext_lower" =~ ^(gif|mp4|webm)$ ]]; then
     if command -v mpv &>/dev/null; then
       mpv --fs --loop=inf --no-terminal "$media" &
+      MPV_PID=$!
+      if [[ "$ext_lower" == "gif" ]]; then
+        sleep 20
+        kill "$MPV_PID" 2>/dev/null
+      else
+        wait "$MPV_PID"
+      fi
     else
       echo -e "\e[31m❌ 'mpv' not found!\e[0m"
     fi
@@ -126,9 +205,10 @@ show_image() {
     echo -e "\e[31m❌ Unsupported file type: $ext_lower\e[0m"
   fi
 
-  FEH_PID=$!
+  echo -e "\e[32m🎥 Displaying media: $media\e[0m"
 }
 
+# Hacker log simulation
 hacker_log() {
   echo -ne "\e[32m"
   type_out "[LOG] Accessing neuron map..."
@@ -154,6 +234,7 @@ hacker_log() {
   echo -e "\e[0m"
 }
 
+# Loading bar animation
 loading_bar() {
   echo -ne "\e[32m🔄 LOADING "
   for _ in {1..20}; do
@@ -164,8 +245,10 @@ loading_bar() {
   sleep 0.5
 }
 
+# Main function
 main() {
   clear
+  neuralink_logo
   hacker_log
   loading_bar
 
@@ -179,7 +262,6 @@ main() {
 
   sleep 15
   kill "$CMATRIX_PID" 2>/dev/null
-  kill "$FEH_PID" 2>/dev/null
   clear
 
   echo -e "\e[32m✅ Brain-hack successful! Meme extraction complete.\e[0m"
